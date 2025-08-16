@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interaktiver Leitfaden für Cannabis-Terpenprofile</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Earth -->
+    <!-- Application Structure Plan: A user-centric, dual-path SPA. Users select a profile ('Fokus & Entspannung' or 'Neurologische Beruhigung') which dynamically updates the content. The core components are an interactive terpene explorer (clickable cards), a filterable list of recommended strains, and a visual summary of the ideal terpene profile via a horizontal bar chart. This task-oriented design is more engaging and efficient for finding relevant information than a linear presentation of the source report. -->
+    <!-- Visualization & Content Choices: Report Info: Ideal terpene balance for each user -> Goal: Inform/Compare -> Viz: Horizontal Bar Chart (Chart.js/Canvas) -> Interaction: Chart updates on profile selection -> Justification: Provides a quick, scannable visual summary of the complex terpene synergy. Report Info: Strain recommendations from tables -> Goal: Organize/Compare -> Presentation: Interactive HTML cards -> Interaction: JS filtering by THC:CBD ratio -> Justification: Allows user to quickly narrow down options based on the critical safety consideration (epilepsy risk). Report Info: Terpene pharmacology -> Goal: Inform -> Presentation: Click-to-reveal HTML sections -> Interaction: JS toggle visibility -> Justification: Prevents information overload by hiding detailed text until requested. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FDFBF8;
+            color: #3a3a3a;
+        }
+        .profile-btn.active {
+            background-color: #4A5568;
+            color: #FFFFFF;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .filter-btn.active {
+            background-color: #6B7280;
+            color: #FFFFFF;
+        }
+        .terpene-card-details {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-in-out;
+        }
+        .terpene-card.open .terpene-card-details {
+            max-height: 1000px;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800 tracking-tight">Interaktiver Terpen-Leitfaden</h1>
+            <p class="mt-4 text-lg text-gray-600 max-w-3xl mx-auto">Ein personalisierter Wegweiser zur Auswahl von Cannabis-Profilen basierend auf Ihren spezifischen Bedürfnissen.</p>
+        </header>
+
+        <main>
+            <section id="profile-selector" class="mb-12">
+                <h2 class="text-2xl font-bold text-center text-gray-700 mb-6">Für wen suchen Sie Empfehlungen?</h2>
+                <div class="flex flex-col sm:flex-row justify-center items-center gap-4">
+                    <button id="btn-user1" class="profile-btn w-full sm:w-auto text-lg font-semibold py-4 px-8 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-100 transition-all duration-300" onclick="selectProfile('user1')">
+                        <span class="block">💪</span>
+                        <span>Fokus & Entspannung</span>
+                    </button>
+                    <button id="btn-user2" class="profile-btn w-full sm:w-auto text-lg font-semibold py-4 px-8 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-100 transition-all duration-300" onclick="selectProfile('user2')">
+                        <span class="block">🧘‍♀️</span>
+                        <span>Neurologische Beruhigung</span>
+                    </button>
+                </div>
+            </section>
+
+            <div id="content-display" class="hidden">
+                <section id="profile-summary" class="mb-12 text-center bg-white p-8 rounded-xl shadow-md border border-gray-200">
+                    <h2 id="summary-title" class="text-3xl font-bold text-gray-800 mb-4"></h2>
+                    <p id="summary-text" class="text-gray-600 max-w-4xl mx-auto"></p>
+                </section>
+                
+                <section id="profile-visual" class="mb-16">
+                    <h3 class="text-2xl font-bold text-center text-gray-700 mb-6">Ideales Terpen-Verhältnis</h3>
+                     <div class="chart-container">
+                        <canvas id="terpeneChart"></canvas>
+                    </div>
+                </section>
+
+                <section id="terpene-explorer" class="mb-16">
+                    <h3 class="text-2xl font-bold text-center text-gray-700 mb-2">Entdecken Sie die Schlüsselterpene</h3>
+                    <p class="text-center text-gray-500 mb-8">Klicken Sie auf eine Karte, um mehr über die Wirkungsweise zu erfahren.</p>
+                    <div id="terpene-cards-container" class="space-y-4"></div>
+                </section>
+                
+                <section id="strain-recommendations" class="mb-12">
+                    <h3 class="text-2xl font-bold text-center text-gray-700 mb-8">Sortenempfehlungen</h3>
+                    <div id="strain-filters" class="flex justify-center gap-2 mb-8"></div>
+                    <div id="strain-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"></div>
+                </section>
+
+                 <section id="important-notes" class="mb-16">
+                    <div id="epilepsy-warning" class="hidden bg-red-50 border-l-4 border-red-400 p-6 rounded-r-lg">
+                        <h4 class="text-xl font-bold text-red-800">Kritische Überlegung: Management des Epilepsierisikos</h4>
+                        <p class="mt-2 text-red-700">Angesichts Ihrer Vorgeschichte mit Epilepsie stellen Sorten mit hohem THC-Gehalt ein potenzielles Risiko dar. Es wird dringend empfohlen, Sorten mit einem <strong>ausgewogenen THC:CBD-Verhältnis</strong> oder hohem CBD-Gehalt zu bevorzugen, insbesondere für den Gebrauch während des Tages, um neurologische Risiken zu minimieren.</p>
+                    </div>
+                </section>
+
+            </div>
+             <div id="initial-message" class="text-center py-16">
+                <p class="text-xl text-gray-500">Bitte wählen Sie ein Profil aus, um zu beginnen.</p>
+            </div>
+        </main>
+        
+        <footer class="mt-16 pt-8 border-t border-gray-200">
+            <h3 class="text-xl font-bold text-center text-red-700 mb-4">Obligatorischer medizinischer Haftungsausschluss</h3>
+            <div class="text-sm text-gray-600 bg-gray-100 p-6 rounded-lg space-y-4">
+                <p><strong>Kein Ersatz für medizinische Beratung:</strong> Die hier bereitgestellten Informationen dienen ausschließlich Bildungszwecken und basieren auf allgemeinen pharmakologischen Erkenntnissen. Sie stellen keinen Ersatz für eine professionelle medizinische Beratung, Diagnose oder Behandlung dar.</p>
+                <p><strong>Epilepsie und Cannabis:</strong> Die Wechselwirkung zwischen Cannabis und Anfallsleiden ist komplex und individuell. THC kann bei manchen Personen pro-konvulsiv wirken. Es ist <strong>absolut unerlässlich</strong>, dass Sie jeden Plan zur Verwendung von Cannabis mit Ihrem Neurologen oder behandelnden Arzt besprechen.</p>
+                <p><strong>Rechtskonformität:</strong> Sie sind allein dafür verantwortlich, sicherzustellen, dass Ihre Handlungen (Anbau, Besitz, Konsum) innerhalb der gesetzlichen Grenzen des Cannabisgesetzes in Deutschland bleiben.</p>
+            </div>
+        </footer>
+    </div>
+
+<script>
+const data = {
+    terpenes: {
+        'beta-caryophyllen': {
+            name: 'Beta-Caryophyllen',
+            aroma: 'Pfeffrig, würzig, holzig',
+            icon: '🌶️',
+            summary: 'Wirkt entzündungshemmend und krampflösend, ohne psychotrope Effekte.',
+            details: `<strong>Mechanismus:</strong> Bindet selektiv an den CB2-Rezeptor des Endocannabinoid-Systems, der hauptsächlich in peripheren Geweben und Immunzellen vorkommt. Dies ermöglicht therapeutische Wirkungen ohne Beeinflussung des Zentralnervensystems.<br><br><strong>Wirkungen:</strong><ul><li class="mt-1"><strong>Entzündungshemmend:</strong> Hemmt wichtige Entzündungsmediatoren und ist wirksam gegen chronische Entzündungen.</li><li class="mt-1"><strong>Antispasmodisch:</strong> Bewirkt eine Entspannung der glatten Muskulatur, was bei Krämpfen und Spasmen hilft.</li><li class="mt-1"><strong>Analgetisch:</strong> Effektiv bei der Linderung von chronischen und entzündlichen Schmerzen.</li></ul>`
+        },
+        'myrcen': {
+            name: 'Myrcen',
+            aroma: 'Erdig, moschusartig, fruchtig',
+            icon: '🥭',
+            summary: 'Fördert Sedierung und Muskelentspannung.',
+            details: `<strong>Mechanismus:</strong> Interagiert mit dem Nervensystem, um Entspannung zu fördern. Es wird angenommen, dass es die Blut-Hirn-Schranke durchlässiger für Cannabinoide macht und deren Wirkung verstärkt.<br><br><strong>Wirkungen:</strong><ul><li class="mt-1"><strong>Muskelrelaxans:</strong> Wird explizit für seine muskelentspannenden Eigenschaften bei Krämpfen und Verspannungen geschätzt.</li><li class="mt-1"><strong>Sedativum:</strong> Verantwortlich für den sedierenden „Couch-Lock“-Effekt, ideal zur Förderung von Ruhe und Schlaf.</li><li class="mt-1"><strong>Analgetisch & Entzündungshemmend:</strong> Zeigt signifikante schmerzlindernde und entzündungshemmende Eigenschaften.</li></ul>`
+        },
+        'limonen': {
+            name: 'Limonen',
+            aroma: 'Zitrusfrüchte, frisch',
+            icon: '🍋',
+            summary: 'Wirkt stimmungsaufhellend, stressreduzierend und entzündungshemmend.',
+            details: `<strong>Mechanismus:</strong> Interagiert vermutlich mit den Serotonin- und Dopaminsystemen, was zur Stimmungsaufhellung beiträgt. Unterdrückt pro-inflammatorische Zytokine.<br><br><strong>Wirkungen:</strong><ul><li class="mt-1"><strong>Entzündungshemmend:</strong> Potente entzündungshemmende Aktivität.</li><li class="mt-1"><strong>Anxiolytisch:</strong> Reduziert Stress und Angst, was hilft, stressbedingte Verspannungen zu durchbrechen.</li><li class="mt-1"><strong>Fokus & Stimmung:</strong> Fördert einen Zustand ruhiger Wachsamkeit ohne Sedierung.</li></ul>`
+        },
+        'linalool': {
+            name: 'Linalool',
+            aroma: 'Blumig, Lavendel',
+            icon: '🌸',
+            summary: 'Primär angstlösend und neurologisch beruhigend.',
+            details: `<strong>Mechanismus:</strong> Moduliert Neurotransmittersysteme durch Hemmung des exzitatorischen Glutamats und Verstärkung des inhibitorischen GABA. Dies ist ein anderer Wirkmechanismus als bei den meisten anderen Terpenen.<br><br><strong>Wirkungen:</strong><ul><li class="mt-1"><strong>Anxiolytisch & Antidepressiv:</strong> Eines der am besten untersuchten Terpene für seine potente angstlösende und stimmungsstabilisierende Wirkung.</li><li class="mt-1"><strong>Sedativum:</strong> Fördert den Schlaf und reduziert die Bewegungsaktivität.</li><li class="mt-1"><strong>Antikonvulsivum:</strong> Hat in präklinischen Modellen krampflösende Eigenschaften gezeigt.</li></ul>`
+        },
+        'alpha-pinen': {
+            name: 'Alpha-Pinen',
+            aroma: 'Kiefer, frisch, harzig',
+            icon: '🌲',
+            summary: 'Fördert kognitive Funktionen, Fokus und geistige Klarheit.',
+            details: `<strong>Mechanismus:</strong> Kann den Spiegel des Neurotransmitters Acetylcholin durch Anti-Acetylcholinesterase-Aktivität erhöhen, was Lernen und Gedächtnis verbessert.<br><br><strong>Wirkungen:</strong><ul><li class="mt-1"><strong>Fokus & Wachsamkeit:</strong> Fördert geistige Klarheit und kann dem kognitiven „Nebel“ von THC entgegenwirken.</li><li class="mt-1"><strong>Entzündungshemmend:</strong> Weist starke entzündungshemmende Eigenschaften auf und ergänzt die Wirkung von BCP und Limonen.</li></ul>`
+        }
+    },
+    profiles: {
+        user1: {
+            title: 'Ihr Profil: Fokus & Entspannung',
+            text: 'Um die paradoxe Anforderung von gleichzeitigem Fokus und muskulärer Entspannung zu erfüllen, ist eine strategische Balance von Terpenen erforderlich. Das Ziel ist eine Synergie, die Entzündungen hemmt und Krämpfe löst, während sie gleichzeitig die geistige Klarheit für konzentrierte Arbeit fördert.',
+            terpenes: ['beta-caryophyllen', 'limonen', 'alpha-pinen', 'myrcen'],
+            chartData: {
+                labels: ['Beta-Caryophyllen', 'Limonen', 'Alpha-Pinen', 'Myrcen'],
+                values: [90, 85, 60, 40]
+            },
+            strains: [
+                { name: 'Harlequin', type: 'Sativa-dominant', terpenes: 'Myrcen, Pinen, Caryophyllen', ratio: '~2:5 (THC:CBD)', effect: 'Klare Entspannung und Schmerzlinderung ohne starke Psychoaktivität. Ideal für Konzentration, minimiert Epilepsierisiko.', category: 'recommended' },
+                { name: 'ACDC', type: 'Hybrid', terpenes: 'Pinen, Myrcen, Caryophyllen', ratio: '~1:20 (THC:CBD)', effect: 'Stark entzündungshemmend mit minimaler psychoaktiver Wirkung. Optimal zur Bekämpfung der Ursachen von Verspannungen bei voller geistiger Klarheit.', category: 'recommended' },
+                { name: 'Cannatonic', type: 'Hybrid', terpenes: 'Pinen, Myrcen', ratio: '~1:1 oder höher', effect: 'Ausgewogene, entspannende und schmerzlindernde Wirkung, die für den Tagesgebrauch geeignet ist und neurologische Sicherheit bietet.', category: 'recommended' },
+                { name: 'Jack Herer (CBD)', type: 'Sativa-dominant', terpenes: 'Pinen, Caryophyllen', ratio: '~1:1 (THC:CBD)', effect: 'Kombiniert Kreativität und Fokus mit den neuroprotektiven Eigenschaften von CBD. Exzellent für produktive Phasen.', category: 'recommended' },
+                { name: 'Sour Diesel', type: 'Sativa-dominant', terpenes: 'Caryophyllen, Limonen, Myrcen', ratio: 'Hoch-THC', effect: 'Potente, energetisierende Wirkung. Aufgrund des hohen THC-Gehalts nur für den Abend oder Zeiten ohne Leistungsdruck empfohlen.', category: 'caution' },
+                { name: 'Jack Herer', type: 'Sativa-dominant', terpenes: 'Pinen, Caryophyllen, Myrcen', ratio: 'Hoch-THC', effect: 'Bekannt für klare Kreativität. Der hohe THC-Gehalt erfordert Vorsicht und ist nicht für den Arbeitstag geeignet.', category: 'caution' },
+                { name: 'Blue Dream', type: 'Hybrid', terpenes: 'Myrcen, Pinen, Caryophyllen', ratio: 'Hoch-THC', effect: 'Sanfte zerebrale Effekte und Schmerzlinderung. Der hohe THC-Gehalt macht es eher für die Freizeit geeignet.', category: 'caution' },
+            ]
+        },
+        user2: {
+            title: 'Ihr Profil: Neurologische Beruhigung',
+            text: 'Für eine tiefgreifende neurologische Beruhigung ist eine Kombination von Terpenen erforderlich, die sowohl das zentrale Nervensystem besänftigt als auch für körperliche Entspannung sorgt. Die Synergie von Linalool und Myrcen ist hier der Schlüssel zu einem Zustand glücklicher Gelassenheit.',
+            terpenes: ['linalool', 'myrcen', 'limonen', 'beta-caryophyllen'],
+            chartData: {
+                labels: ['Linalool', 'Myrcen', 'Limonen', 'Beta-Caryophyllen'],
+                values: [90, 75, 50, 40]
+            },
+            strains: [
+                { name: 'Granddaddy Purple', type: 'Indica', terpenes: 'Myrcen, Caryophyllen, Linalool', ratio: 'Hoch-THC', effect: 'Mentale Beruhigung durch Linalool und tiefe körperliche Entspannung durch Myrcen. Ideal zur Linderung von Stress.', category: 'all' },
+                { name: 'Lavender Kush', type: 'Indica-dominant', terpenes: 'Linalool, Caryophyllen, Myrcen', ratio: 'Moderat-THC', effect: 'Hoher Linalool-Gehalt wirkt direkt anxiolytisch und beruhigt das Nervensystem. Sanfter Stressabbau am Abend.', category: 'all' },
+                { name: 'Do-Si-Dos', type: 'Indica-dominant', terpenes: 'Limonen, Linalool, Caryophyllen', ratio: 'Hoch-THC', effect: 'Kombiniert euphorische Stimmungsaufhellung mit intensiver körperlicher Entspannung. Wirksam gegen Angstzustände.', category: 'all' },
+                { name: 'Zkittlez (CBD)', type: 'Indica-dominant', terpenes: 'Caryophyllen, Limonen, Linalool', ratio: '~1:1 (THC:CBD)', effect: 'Bietet beruhigende Eigenschaften ohne intensive Psychoaktivität. Eine sanfte, funktionale Option zur Entspannung.', category: 'all' },
+                { name: 'Bubba Kush (CBD)', type: 'Indica', terpenes: 'Caryophyllen, Limonen, Myrcen', ratio: '~1:1 oder 1:3', effect: 'Tiefe, beruhigende Entspannung. Ideal für Personen, die empfindlich auf THC reagieren, aber eine starke beruhigende Wirkung suchen.', category: 'all' },
+            ]
+        }
+    }
+};
+
+let currentProfile = null;
+let terpeneChart = null;
+
+const contentDisplay = document.getElementById('content-display');
+const initialMessage = document.getElementById('initial-message');
+const summaryTitle = document.getElementById('summary-title');
+const summaryText = document.getElementById('summary-text');
+const terpeneCardsContainer = document.getElementById('terpene-cards-container');
+const strainFiltersContainer = document.getElementById('strain-filters');
+const strainCardsContainer = document.getElementById('strain-cards-container');
+const epilepsyWarning = document.getElementById('epilepsy-warning');
+
+function selectProfile(profile) {
+    currentProfile = profile;
+    contentDisplay.classList.remove('hidden');
+    initialMessage.classList.add('hidden');
+    
+    document.querySelectorAll('.profile-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`btn-${profile}`).classList.add('active');
+
+    updateContent();
+}
+
+function updateContent() {
+    const profileData = data.profiles[currentProfile];
+
+    summaryTitle.textContent = profileData.title;
+    summaryText.textContent = profileData.text;
+
+    renderTerpeneCards(profileData.terpenes);
+    renderStrainFilters();
+    renderStrainCards(profileData.strains);
+    renderTerpeneChart(profileData.chartData);
+
+    if (currentProfile === 'user1') {
+        epilepsyWarning.classList.remove('hidden');
+    } else {
+        epilepsyWarning.classList.add('hidden');
+    }
+}
+
+function renderTerpeneCards(terpeneKeys) {
+    terpeneCardsContainer.innerHTML = '';
+    terpeneKeys.forEach(key => {
+        const terpene = data.terpenes[key];
+        const card = document.createElement('div');
+        card.className = 'terpene-card bg-white rounded-lg shadow-sm border border-gray-200 cursor-pointer';
+        card.innerHTML = `
+            <div class="p-4 flex justify-between items-center">
+                <div class="flex items-center">
+                    <span class="text-3xl mr-4">${terpene.icon}</span>
+                    <div>
+                        <h4 class="font-bold text-lg text-gray-800">${terpene.name}</h4>
+                        <p class="text-sm text-gray-500">${terpene.aroma}</p>
+                    </div>
+                </div>
+                <span class="text-gray-400 transform transition-transform duration-300">&#9662;</span>
+            </div>
+            <div class="terpene-card-details px-4 pb-4">
+                <p class="text-gray-700 font-medium mb-4">${terpene.summary}</p>
+                <div class="text-sm text-gray-600 space-y-2">${terpene.details}</div>
+            </div>
+        `;
+        card.addEventListener('click', () => {
+            card.classList.toggle('open');
+            const arrow = card.querySelector('span.transform');
+            arrow.style.transform = card.classList.contains('open') ? 'rotate(180deg)' : 'rotate(0deg)';
+        });
+        terpeneCardsContainer.appendChild(card);
+    });
+}
+
+function renderStrainFilters() {
+    strainFiltersContainer.innerHTML = '';
+    if (currentProfile === 'user1') {
+        strainFiltersContainer.innerHTML = `
+            <button class="filter-btn active py-2 px-4 text-sm font-medium bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition" onclick="filterStrains('all', this)">Alle</button>
+            <button class="filter-btn py-2 px-4 text-sm font-medium bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition" onclick="filterStrains('recommended', this)">Empfohlen (CBD-reich)</button>
+            <button class="filter-btn py-2 px-4 text-sm font-medium bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition" onclick="filterStrains('caution', this)">Vorsicht (Hoch-THC)</button>
+        `;
+    }
+}
+
+function filterStrains(category, btnElement) {
+    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+    btnElement.classList.add('active');
+
+    const strainCards = document.querySelectorAll('.strain-card');
+    strainCards.forEach(card => {
+        if (category === 'all' || card.dataset.category === category) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+function renderStrainCards(strains) {
+    strainCardsContainer.innerHTML = '';
+    strains.forEach(strain => {
+        const card = document.createElement('div');
+        card.className = 'strain-card bg-white p-6 rounded-xl shadow-md border border-gray-200 flex flex-col';
+        card.dataset.category = strain.category;
+        card.innerHTML = `
+            <h4 class="text-xl font-bold text-gray-800">${strain.name}</h4>
+            <p class="text-sm font-medium text-indigo-600 mb-2">${strain.type}</p>
+            <p class="text-sm text-gray-500 mb-4"><strong>Terpene:</strong> ${strain.terpenes}</p>
+            <div class="mb-4">
+                <span class="inline-block bg-gray-100 text-gray-800 text-xs font-semibold mr-2 px-2.5 py-0.5 rounded-full">Ratio: ${strain.ratio}</span>
+            </div>
+            <p class="text-gray-600 flex-grow">${strain.effect}</p>
+        `;
+        strainCardsContainer.appendChild(card);
+    });
+}
+
+function renderTerpeneChart(chartData) {
+    const ctx = document.getElementById('terpeneChart').getContext('2d');
+    if (terpeneChart) {
+        terpeneChart.destroy();
+    }
+    terpeneChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.labels,
+            datasets: [{
+                label: 'Relative Konzentration im Idealprofil',
+                data: chartData.values,
+                backgroundColor: [
+                    'rgba(75, 192, 192, 0.6)',
+                    'rgba(255, 206, 86, 0.6)',
+                    'rgba(54, 162, 235, 0.6)',
+                    'rgba(153, 102, 255, 0.6)'
+                ],
+                borderColor: [
+                    'rgba(75, 192, 192, 1)',
+                    'rgba(255, 206, 86, 1)',
+                    'rgba(54, 162, 235, 1)',
+                    'rgba(153, 102, 255, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    max: 100,
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                     grid: {
+                        color: '#E5E7EB'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: false
+                }
+            }
+        }
+    });
+}
+
+</script>
+</body>
+</html>
